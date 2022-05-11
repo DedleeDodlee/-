@@ -1,0 +1,260 @@
+Main
+import java.util.Scanner;
+
+public class Main {
+    public static void main(String[] args) {
+        greetings();
+
+        Scanner scanner = new Scanner(System.in);   // считыватель ввода из консоли
+        Director director = new Director(); // управляющий объект для базы данных
+
+        String action = ""; // действие пользователя
+        while (true) {
+
+            System.out.print("> ");
+            action = scanner.next();    // считываем действие пользователя
+
+            if (action.equals("all"))
+                director.showAllemployees();
+            else if (action.equals("salary"))
+                director.showSortedBySalary();
+            else if (action.equals("effic"))
+                director.showSortedByEffeciency();
+            else if (action.equals("hire")) {
+                int amountToHire = scanner.nextInt();  // получаем количество для наёма
+                director.hireNewEmployees(amountToHire);
+            } else if (action.equals("fire"))
+                director.fireBademployees();
+            else if (action.equals("save"))
+                director.save();
+            else if (action.equals("help"))
+                showHelp(); // выводим справку по командам
+            else if (action.equals("close"))
+                break;
+            else {
+                System.out.println("Unknown command");
+                System.out.println("Type \"help\" to see available commands");
+            }
+
+            System.out.println();
+            System.out.println();
+        }
+
+        scanner.close();
+    }
+
+    public static void showHelp() {
+        System.out.println("Avaliable commands:");
+        System.out.println("\tall - print all employees");
+        System.out.println("\tsalary - print all employees ordered by his salary");
+        System.out.println("\teffic - print all employees ordered by his efficiency");
+        System.out.println("\thire <n> - hire n employees where n is integer amount of employees you want");
+        System.out.println("\tfire - fire all employees whom salary more than average and efficiency less than average");
+        System.out.println("\tsave - save the changes to database");
+        System.out.println("\tclose - exit the program");
+    }
+
+    public static void greetings() {
+        System.out.println("Welcome to Director program!");
+        System.out.println("It's the easiest way (nope) to control your office plankton");
+        System.out.println("Type commands just right after \">\"");
+    }
+}
+
+Database
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.stream.Collectors;
+
+public class Database {
+    private String databaseName; // название базы данных
+    private File databaseFile;  // файл базы данных
+
+    /** Функция для перевода списка из сырого в список работников
+     * Так как считывание происходит в сыром виде, для дальнейших манипуляций нужно произвести безопасное преобразование
+     */
+    private ArrayList<Employee> castEmployerArrayList(Object obj) {
+        ArrayList<Employee> ret = new ArrayList<>();
+        ArrayList<?> tempArrayList = (ArrayList<?>) obj;    // приводим объект obj к объекту ArrayList, который хранит в себе неизвестный тип данных
+
+        /** Выполняем безопасное добавление в список */
+        for (Object employer : tempArrayList)
+            ret.add((Employee) employer);
+
+        return ret;
+    }
+
+    /** Конструктор класса */
+    public Database(String name) {
+        this.databaseName = name;
+        this.databaseFile = new File(this.databaseName);    // получаем дескриптор файла базы данных
+
+        try {
+            this.databaseFile.createNewFile();  // пытаемся создать; если файл уже есть, то выдаст ошибку, которую мы отловим и пойдём дальше
+        } catch (Exception e) {
+        }
+    }
+
+    /** Функция чтения содержимого базы данных */
+    public ArrayList<Employee> readAll() {
+        ArrayList<Employee> ret = new ArrayList<>(); // создаём пустой список; в случае ошибки он и будет возвращён
+
+        try {
+            ObjectInputStream databaseInput = new ObjectInputStream(new FileInputStream(this.databaseFile));    // создаём объект для чтения в бинарном(сыром) виде
+            ret = this.castEmployerArrayList(databaseInput.readObject());   // считваем сериализованный объект
+            databaseInput.close();  // закрываем считыватель
+        } catch (Exception e) {
+        }
+
+        return ret;
+    }
+
+    /** Функция для сохранения списка в файл */
+    public void save(ArrayList<Employee> newEmployers) {
+        List<Employee> withoutDuplicates = newEmployers.stream().distinct().collect(Collectors.toList()); // при помощи потоков (штука сложная, поэтому она только здесь) избавляемся от дубликатов в списке
+        ArrayList<Employee> toWrite = new ArrayList<>(withoutDuplicates); // переводим обычный список к ArrayList
+
+        try {
+            ObjectOutputStream databaseOutput = new ObjectOutputStream(new FileOutputStream(this.databaseFile));    // создаём объект для записи в сыром виде
+            databaseOutput.writeObject(toWrite); // выполняем запись списка в файл
+            databaseOutput.close();     // закрываем объект
+        } catch (Exception e) {
+        }
+    }
+}
+
+Director
+import java.util.ArrayList;
+import java.util.Random;
+
+public class Director {
+    static public int AVERAGESALARY = 300; // определяет среднюю зарплату; можно менять
+
+    static final private Database db = new Database("employers.db");    // подконтрольная база данных
+    static final private Random random = new Random();  // генератор рандомных чисел
+
+    private ArrayList<Employee> employees = db.readAll();   // Здесь не конструктора, но это выполняется при создании объекта; получаем всех работников из базы данных
+
+    /** Функция для удаления плохих работников */
+    public void fireBademployees() {
+        int sizeWas = this.employees.size();    // количество работников было
+
+        ArrayList<Employee> tempList = new ArrayList<>();   // создаём временный список, куда будут записываться не удалённые записи
+        for (Employee employee : this.employees) {
+            if (employee.getSalary() > AVERAGESALARY && employee.getEfficiency() < 50)  // проверяем условие на "плохого" работника
+                tempList.add(employee);
+        }
+        this.employees = new ArrayList<>(tempList); // копируем созданный список в новый; он будет состоять из "хороших" работников
+
+        int sizeNow = this.employees.size();
+
+        System.out.printf("Employees was fired: %d\n", sizeWas - sizeNow);  // выводим количество уволенных сотрудников
+    }
+
+    /** Функция наёма howMuch сотрудников */
+    public void hireNewEmployees(int howMuch) {
+        for (int i = 0; i < howMuch; i++) {
+            String name = "Employee " + this.employees.size();  // делаем имя для нового сотрудника
+            int salary = random.nextInt(AVERAGESALARY * 2) + 100;   // делаем зарплату для нового сотрудника
+            double effeciency = random.nextDouble() * 100;  // делаем эффективность для нового сотрудника
+
+            this.employees.add(new Employee(name, salary, effeciency)); // добавляем сотрудника в список
+        }
+    }
+
+    /** Вывод всех сотрудников */
+    public void showAllemployees() {
+        for (int i = 0; i < this.employees.size(); i++)
+            System.out.printf("%d. %s\n", i, this.employees.get(i));
+    }
+
+    /** Вывод сотрудников по убыванию зарплаты */
+    public void showSortedBySalary() {
+        ArrayList<Employee> sorted = new ArrayList<>(this.employees);   // копируем массив исходный, чтобы его отсортировать
+        sorted.sort((Employee e1, Employee e2) -> Integer.compare(e2.getSalary(), e1.getSalary())); // здесь используется лямбда-функция для сравнения зарплат
+        /** Вывод сортированного списка */
+        for (int i = 0; i < sorted.size(); i++)
+            System.out.printf("%d. %s\n", i, sorted.get(i));
+    }
+
+    public void showSortedByEffeciency() {
+        ArrayList<Employee> sorted = new ArrayList<>(this.employees);   // копируем массив исходный, чтобы его отсортировать
+        sorted.sort((Employee e1, Employee e2) -> Double.compare(e2.getEfficiency(), e1.getEfficiency())); // здесь используется лямбда-функция для сравнения эффективности
+        /** Вывод сортированного списка */
+        for (int i = 0; i < sorted.size(); i++)
+            System.out.printf("%d. %s\n", i, sorted.get(i));
+    }
+
+    /** Функция для сохранения изменений в базе данных */
+    public void save() {
+        db.save(this.employees);
+    }
+}
+
+
+
+Employee
+import java.io.Serializable;
+
+/** Serializable позволяет записывать объект в сыром виде в файл и считывать его оттуда */
+public class Employee implements Serializable {
+    private String name;    // имя
+    private int salary; // зарплата
+    private double efficiency;  // эффективность (в процентах)
+
+    /** Конструктор для работящей единицы */
+    public Employee(String name, int salary, double effect) {
+        this.name = name;
+        this.salary = salary;
+        this.efficiency = effect;
+    }
+ 
+    public void setName(String newName) {
+        this.name = newName;
+    }
+
+    public void setSalary(int newSalary) {
+        this.salary = newSalary;
+    }
+
+    public void setEfficiency(double newEfficiency) {
+        this.efficiency = newEfficiency;
+    }
+
+    public String getName() {
+        return this.name;
+    }
+
+    public int getSalary() {
+        return this.salary;
+    }
+
+    public double getEfficiency() {
+        return this.efficiency;
+    }
+
+    /** Функция для сравнения двух экземпляров; нужна для работы потока */
+    @Override
+    public boolean equals(Object obj) {
+        if (obj == null)
+            return false;
+        if (this == obj)
+            return true;
+        if (!(obj instanceof Employee))
+            return false;
+
+        Employee other = (Employee) obj;
+        return this.name.equals(other.name);
+    }
+
+    /** Функция для вывода экземпляра в консоль */
+    @Override
+    public String toString() {
+        return String.format("{%s, salary=%d, effect=%.2f%%}", this.name, this.salary, this.efficiency);
+    }
+}
